@@ -1,0 +1,85 @@
+
+#sh script to load data
+TMPDIR="/wfp_data/modis"
+STATEDIR="/gis_data/hotspot"
+STATESCHEMA="wfp"
+DB="wfp"
+USER_NAME="postgres"
+cd $STATEDIR
+
+#unzip files into temp directory
+for z in */*.zip; do unzip -o -d $TMPDIR $z;  
+for z in *.zip; do unzip -o -d $TMPDIR $z;
+
+#Load data into PostgreSQL from shape file to geography
+shp2pgsql -G -s 4326 Global_24h public.hotspot > hotspot.sql
+psql -h localhost -d wfp -U postgres -f hotspot.sql
+
+shp2pgsql -G -s 4326 TM_WORLD_BORDERS­0.3 public.country > country.sql
+psql -h localhost -d wfp -U postgres -f country.sql
+
+
+
+#loop for  hotspot and  county tables for appending to respective wfp.hotspot wfp.country tables
+for t in hotspot ;
+do
+ for z in *${t}.dbf;
+  do 
+	shp2pgsql  -s 4326 -g the_geom_4326 -S -W "latin1" -a $z ${STATE_SCHEMA}.${t} | psql -d $DB -U $USER_NAME;  
+  done
+done
+
+#using ogr2org
+---------------------------------------------------
+ogr2ogr -f "PostgreSQL"-overwrite PG:"host=localhost port=5432 user=postgres dbname=wfp password=postgres" C:/wfp/hotspot.shp
+
+-------------------------------------------------------------------------------
+for shapefile in shp_list:
+    program = "C:\GDAL"
+    command = 'ogr2ogr -f "PostgreSQL"-overwrite PG:"host=localhost port=5432 user=postgres dbname=wfp password=postgres" %s' shapefile
+    input_command = [command]
+    command_run = subprocess.call([program, input_command])
+    if command_run == 0:
+        print "Its worked!!"
+    else:
+        print "exists table appen"
+        input_command = [command]
+        command_run = subprocess.call([program, input_command])
+        command = 'ogr2ogr -f "PostgreSQL"-overwrite PG:"host=localhost port=5432 user=postgres dbname=wfp password=postgres" C:/wfp/hotspot.shp'
+        command_run = subprocess.call([program, input_command])
+		-------------------------------------------------------------
+
+
+#OUTPUT TO SHAPEFILE using PGSQL2SHP
+ #Export query to a shape file
+pgsql2shp -f "/wfp/shapefiles" -h localhost -u postgres -P postgres wfp 
+	"SELECT country.*,hotspot.*
+ FROM hotspot, country
+ WHERE ST_Within(country.geom,country.geom)"
+	
+#Export a table in wfp schema called country to country.shp
+pgsql2shp -f "/wfp/country" -h localhost -u postgres -P postgres wfp wfp.country
+
+
+--------------------
+SELECT country.*,hotspot.*
+
+ FROM hotspot, country
+ WHERE ST_Within(country.geom,country.geom) 
+ -----------------------------------
+ #views
+ CREATE OR REPLACE VIEW view_country AS 
+ SELECT country.iso2,
+    country.iso3,
+    country.name,
+    country.geom
+   FROM country;
+   ----------------------------
+   CREATE OR REPLACE VIEW view_hotspot AS 
+ SELECT hotspot.scan,
+    hotspot.track,
+    hotspot.acq_date,
+    hotspot.acq_time,
+    hotspot.satellite,
+    hotspot.geom
+   FROM hotspot;
