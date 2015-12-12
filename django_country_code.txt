@@ -1,0 +1,179 @@
+# create the database
+$ createdb -T template_postgis wfp
+$ sudo su - postgres
+$ createuser --createdb ashwin
+$ exit
+--create project  country:
+$ django-admin.py startproject country
+$ cd country
+$ python manage.py startapp wfp
+--Configure settings.py
+DATABASES = {
+    'default': {
+         'ENGINE': 'django.contrib.gis.db.backends.postgis',
+         'NAME': 'country',
+         'USER': 'ashwin',
+     }
+}
+
+INSTALLED_APPS = (
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.sites',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django.contrib.admin',
+    'django.contrib.gis',
+    'wfp'
+)
+--Geographic Data Country boarders
+$ mkdir wfp/country
+$ cd wfp/country
+$ wget http://thematicmapping.org/downloads/TM_WORLD_BORDERS-0.3.zip
+$ unzip TM_WORLD_BORDERS-0.3.zip
+$ cd ../..
+
+ --GDAL ogrinfo
+$ ogrinfo wfp/country/TM_WORLD_BORDERS-0.3.shp
+INFO: Open of ` wfp/country /TM_WORLD_BORDERS-0.3.shp'
+      using driver `ESRI Shapefile' 
+1: TM_WORLD_BORDERS-0.3 (Polygon)
+--ogrinfo 
+$ ogrinfo -so world/data/TM_WORLD_BORDERS-0.3.shp TM_WORLD_BORDERS-0.3
+INFO: Open of `world/data/TM_WORLD_BORDERS-0.3.shp'
+      using driver `ESRI Shapefile' successful.
+
+Layer name: TM_WORLD_BORDERS-0.3
+Geometry: Polygon
+Feature Count: 246
+Extent: (-180.000000, -90.000000) - (180.000000, 83.623596)
+Layer SRS WKT:
+GEOGCS["GCS_WGS_1984",
+    DATUM["WGS_1984",
+        SPHEROID["WGS_1984",6378137.0,298.257223563]],
+    PRIMEM["Greenwich",0.0],
+    UNIT["Degree",0.0174532925199433]]
+FIPS: String (2.0)
+ISO2: String (2.0)
+ISO3: String (3.0)
+UN: Integer (3.0)
+NAME: String (50.0)
+AREA: Integer (7.0)
+POP2005: Integer (10.0)
+REGION: Integer (3.0)
+SUBREGION: Integer (3.0)
+LON: Real (8.3)
+LAT: Real (7.3)
+--Defining a Geographic Model
+
+from django.contrib.gis.db import models
+
+class countryBorder(models.Model):
+    pop2005 = models.IntegerField('Population 2005')
+    iso2 = models.CharField('2 Digit ISO', max_length=2)
+    iso3 = models.CharField('3 Digit ISO', max_length=3)
+    
+
+     mpoly = models.MultiPolygonField()
+    
+
+    # Returns the string representation of the model.
+    def __unicode__(self):
+        return self.name
+#Run syncdb
+$ python manage.py sqlall wfp
+
+BEGIN;
+CREATE TABLE "country_countryborder" (
+    "id" serial NOT NULL PRIMARY KEY,
+    "iso2" varchar(2) NOT NULL,
+    "iso3" varchar(3) NOT NULL,
+    "name" varchar(50) NOT NULL,
+    "pop2005" integer NOT NULL
+
+    
+)
+;
+SELECT AddGeometryColumn(' country_countryborder, 'mpoly', 4326, 'MULTIPOLYGON', 2);
+ALTER TABLE " country_countryborder " ALTER "mpoly" SET NOT NULL;
+CREATE INDEX " country_countryborder _mpoly_id" ON " country_countryborder " USING GIST ( "mpoly" GIST_GEOMETRY_OPS );
+COMMIT;
+
+ python manage.py syncdb
+
+#Importing Spatial Data¶
+#using
+•	ogr2ogr:
+•	shp2pgsql:
+#GDAL Interface
+#invoke the Django shell:
+$ python manage.py shell
+>>> import os
+>>> import country
+>>> country_shp = os.path.abspath(os.path.join(os.path.dirname(world.__file__),
+...                             'data/TM_WORLD_BORDERS-0.3.shp'))
+
+>>> from django.contrib.gis.gdal import DataSource
+>>> ds = DataSource(country_shp)
+>>> print(ds)
+/ ... /geodjango/wfp/country/TM_WORLD_BORDERS-0.3.shp (ESRI Shapefile)
+
+#LayerMapping
+import os
+from django.contrib.gis.utils import LayerMapping
+from models import countryBorder
+
+country_mapping = {
+    
+    'iso2' : 'ISO2',
+    'iso3' : 'ISO3',
+    'name' : 'NAME',
+    'pop2005' : 'POP2005',
+    'mpoly' : 'MULTIPOLYGON',
+}
+
+country_shp = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data/TM_WORLD_BORDERS-0.3.shp'))
+
+def run(verbose=True):
+    lm = LayerMapping(countryBorder, country_shp, country_mapping,
+                      transform=False, encoding='iso-8859-1')
+
+    lm.save(strict=True, verbose=verbose)
+
+
+$ python manage.py shell
+
+>>> from world import load
+>>> load.run()
+# ogrinspect
+$ python manage.py ogrinspect wfp/country/TM_WORLD_BORDERS-0.3.shp countryBorder \
+    --srid=4326 --mapping --multi
+
+countryborders_mapping = {
+    'iso2' : 'ISO2',
+    'iso3' : 'ISO3',
+    'name' : 'NAME',
+    'pop2005' : 'POP2005',
+    'geom' : 'MULTIPOLYGON',
+}
+#Putting  data on the map
+
+from django.contrib.gis import admin
+from models import countryBorder
+
+admin.site.register(countryBorder, admin.GeoModelAdmin)
+
+from django.conf.urls import patterns, url, include
+from django.contrib.gis import admin
+
+admin.autodiscover()
+
+urlpatterns = patterns('',
+    url(r'^admin/', include(admin.site.urls)),
+)
+#Start the Django development server:
+$ python manage.py runserver
+ #browse to http://localhost:8000/admin
+
+ 
